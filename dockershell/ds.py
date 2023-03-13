@@ -1,13 +1,14 @@
 import click
 import logging
 import os
+import shlex
 import textwrap
 
 from io import StringIO
 from pathlib import Path
 from rich.traceback import install
 from sh import git, docker
-from subprocess import Popen, PIPE, CalledProcessError
+from subprocess import Popen, PIPE, CalledProcessError, DEVNULL
 
 install()
 
@@ -111,7 +112,7 @@ def createDockerfile( dockerfile_path:Path ):
             FROM python-setup AS user-shell
 
             WORKDIR /work
-            ENTRYPOINT ["/bin/bash"]
+            CMD ["fish"]
         '''))
 
 def createDsrc(dsrc_path:Path):
@@ -123,26 +124,29 @@ def createDsrc(dsrc_path:Path):
         '''))
 
 
-def runCommand(cmd:str):
+def runCommand(cmd:str, quiet:bool=False):
     '''Call cmd in the shell, logging output.'''
     log= logging.getLogger('cli.runCommand')
-
-    with Popen(cmd, stdout=PIPE, bufsize=1, universal_newlines=True) as p:
-        for line in p.stdout:
-            log.info(line, end='') # process line here
+    if quiet:
+        with Popen(cmd, stdout=DEVNULL, stderr=DEVNULL, bufsize=1, universal_newlines=True) as p:
+            pass
+    else:
+        with Popen(cmd, stdout=None, stderr=None, bufsize=1, universal_newlines=True) as p:
+            pass
 
     if p.returncode != 0:
         raise CalledProcessError(p.returncode, p.args)
 
-@click.command
+@click.command(context_settings=dict(ignore_unknown_options=True))
 @click.option('-n/-N','--dry-run/--no-dry-run',help='If set, do not actually do anything.')
 @click.option('-v','--verbose', count=True, help='Increase verbosity.')
 @click.option('-q','--quiet', count=True, help='Decrease verbosity.')
 @click.option('--init/--no-init', help='Generate an initial Dockerfile in the build root.')
 @click.option('--dockerfile', help='Specify a dockerfile, otherwise we guess at one.')
 @click.option('--dsrc', help='Specify a ds.rc command file, otherwise we guess at one.')
+@click.option('-w','--work-directory',help='Specify the directory to work in.')
 @click.argument('command', nargs=-1)
-def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None):
+def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None, work_directory=None):
     '''
     Using Docker, run the given command within a custom build image.
 
@@ -162,6 +166,9 @@ def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None):
     root= getRoot()
     dockerfile_path= Path(dockerfile).resolve() if dockerfile else root/Path('Dockerfile')
     dsrc_path= Path(dsrc).resolve() if dsrc else root/Path('ds.rc')
+    uid=os.getuid()
+    user=os.getlogin()
+    work_directory= Path(work_directory).resolve() if work_directory else root
     log.debug(textwrap.dedent(f'''
     Settings:
 
@@ -171,6 +178,9 @@ def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None):
       root .............. {root}
       Dockerfile path ... {dockerfile_path} {'[EXISTS]' if dockerfile_path.exists() else '[ABSENT]'}
       ds.rc path ........ {dsrc_path} {'[EXISTS]' if dsrc_path.exists() else '[ABSENT]'}
+      uid ............... {uid}
+      user .............. {user}
+      work directory .... {work_directory}
       '''))
 
     if init:
@@ -190,5 +200,6 @@ def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None):
             log.info('Would have built dockershell:latest')
             log.info('Would have run dockershell:latest')
         else:
-            runCommand(['docker', 'buildx', 'build', '.', '-t', 'dockershell:latest', '--build-arg', 'user=seans', '--build-arg', 'uid=1000'])
-            os.execlp('docker', 'docker', 'run', '-v', '.:/work', '-it', '--rm', '--entrypoint', '/usr/bin/fish', '--workdir', '/work', '-u', 'seans', 'dockershell:latest')
+            command = shlex.split(command) if command else command
+            runCommand(['docker', 'buildx', 'build', '.', '-t', 'dockershell:latest', '--build-arg', f'user={user}', '--build-arg', f'uid={uid}'], quiet=logging_level>logging.INFO)
+            os.execlp('docker', 'docker', 'run', '-v', f'.:{work_directory}', '-it', '--rm', '--workdir', work_directory, '-u', user, 'dockershell:latest', *command)
