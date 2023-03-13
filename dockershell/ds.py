@@ -43,8 +43,12 @@ def createDockerfile(dockerfile_path: Path):
             textwrap.dedent(
                 """            FROM ubuntu:latest AS base
 
-            ARG user
-            ARG uid
+            ARG USER
+            ENV user=${USER}
+            ARG UID
+            ENV uid=${UID}
+            ARG ROOTDIR
+            ENV rootdir=${ROOTDIR}
             
             # Keep apt tools from prompting
             ARG DEBIAN_FRONTEND=noninteractive
@@ -245,9 +249,11 @@ def cli(
                     "-t",
                     "dockershell:latest",
                     "--build-arg",
-                    f"user={user}",
+                    f"USER={user}",
                     "--build-arg",
-                    f"uid={uid}",
+                    f"UID={uid}",
+                    "--build-arg",
+                    f"ROOTDIR={root}"
                 ],
                 quiet=logging_level > logging.INFO,
             )
