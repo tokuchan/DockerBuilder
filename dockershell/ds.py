@@ -12,32 +12,36 @@ from subprocess import Popen, PIPE, CalledProcessError, DEVNULL
 
 install()
 
-gitRoot= getattr(git, 'rev-parse').bake(show_toplevel=True)
+gitRoot = getattr(git, "rev-parse").bake(show_toplevel=True)
+
 
 def getRoot():
-    '''
+    """
     Discover the root of the build. Look in each directory between here and
     project root for a Dockerfile. If one is found, then that is the build
     root.
-    '''
-    log= logging.getLogger('cli.root')
-    git_root= Path(gitRoot().strip()).resolve()
-    for parent in (Path().cwd()/Path('foo')).parents:
-        log.debug(f'Trying: {parent}')
-        if (parent / Path('Dockerfile')).exists():
-            log.debug(f'Found root: {parent}')
+    """
+    log = logging.getLogger("cli.root")
+    git_root = Path(gitRoot().strip()).resolve()
+    for parent in (Path().cwd() / Path("foo")).parents:
+        log.debug(f"Trying: {parent}")
+        if (parent / Path("Dockerfile")).exists():
+            log.debug(f"Found root: {parent}")
             return parent.resolve()
         if parent == git_root:
             return git_root
     return git_root
 
-def createDockerfile( dockerfile_path:Path ):
-    '''Create a new Dockerfile at the specified path.'''
-    log= logging.getLogger('cli.createDockerfile')
-    log.info('Creating Dockerfile file')
+
+def createDockerfile(dockerfile_path: Path):
+    """Create a new Dockerfile at the specified path."""
+    log = logging.getLogger("cli.createDockerfile")
+    log.info("Creating Dockerfile file")
     dockerfile_path.unlink(missing_ok=True)
-    with dockerfile_path.open('w') as fout:
-        fout.write(textwrap.dedent('''            FROM ubuntu:latest AS base
+    with dockerfile_path.open("w") as fout:
+        fout.write(
+            textwrap.dedent(
+                """            FROM ubuntu:latest AS base
 
             ARG user
             ARG uid
@@ -113,41 +117,66 @@ def createDockerfile( dockerfile_path:Path ):
 
             WORKDIR /work
             CMD ["fish"]
-        '''))
+        """
+            )
+        )
 
-def createDsrc(dsrc_path:Path):
-    log= logging.getLogger('cli.createDsrc')
-    log.info('Creating ds.rc file')
+
+def createDsrc(dsrc_path: Path):
+    log = logging.getLogger("cli.createDsrc")
+    log.info("Creating ds.rc file")
     dsrc_path.unlink(missing_ok=True)
-    with dsrc_path.open('w') as fout:
-        fout.write(textwrap.dedent(f'''bash
-        '''))
+    with dsrc_path.open("w") as fout:
+        fout.write(
+            textwrap.dedent(
+                f"""bash
+        """
+            )
+        )
 
 
-def runCommand(cmd:str, quiet:bool=False):
-    '''Call cmd in the shell, logging output.'''
-    log= logging.getLogger('cli.runCommand')
+def runCommand(cmd: str, quiet: bool = False):
+    """Call cmd in the shell, logging output."""
+    log = logging.getLogger("cli.runCommand")
     if quiet:
-        with Popen(cmd, stdout=DEVNULL, stderr=DEVNULL, bufsize=1, universal_newlines=True) as p:
+        with Popen(
+            cmd, stdout=DEVNULL, stderr=DEVNULL, bufsize=1, universal_newlines=True
+        ) as p:
             pass
     else:
-        with Popen(cmd, stdout=None, stderr=None, bufsize=1, universal_newlines=True) as p:
+        with Popen(
+            cmd, stdout=None, stderr=None, bufsize=1, universal_newlines=True
+        ) as p:
             pass
 
     if p.returncode != 0:
         raise CalledProcessError(p.returncode, p.args)
 
+
 @click.command(context_settings=dict(ignore_unknown_options=True))
-@click.option('-n/-N','--dry-run/--no-dry-run',help='If set, do not actually do anything.')
-@click.option('-v','--verbose', count=True, help='Increase verbosity.')
-@click.option('-q','--quiet', count=True, help='Decrease verbosity.')
-@click.option('--init/--no-init', help='Generate an initial Dockerfile in the build root.')
-@click.option('--dockerfile', help='Specify a dockerfile, otherwise we guess at one.')
-@click.option('--dsrc', help='Specify a ds.rc command file, otherwise we guess at one.')
-@click.option('-w','--work-directory',help='Specify the directory to work in.')
-@click.argument('command', nargs=-1)
-def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None, work_directory=None):
-    '''
+@click.option(
+    "-n/-N", "--dry-run/--no-dry-run", help="If set, do not actually do anything."
+)
+@click.option("-v", "--verbose", count=True, help="Increase verbosity.")
+@click.option("-q", "--quiet", count=True, help="Decrease verbosity.")
+@click.option(
+    "--init/--no-init", help="Generate an initial Dockerfile in the build root."
+)
+@click.option("--dockerfile", help="Specify a dockerfile, otherwise we guess at one.")
+@click.option("--dsrc", help="Specify a ds.rc command file, otherwise we guess at one.")
+@click.option("-w", "--work-directory", help="Specify the directory to work in.")
+@click.argument("command", nargs=-1)
+def cli(
+    dry_run,
+    verbose,
+    quiet,
+    init,
+    command,
+    dockerfile=None,
+    dsrc=None,
+    work_directory=None,
+):
+    """
     Using Docker, run the given command within a custom build image.
 
     The command first determines a "build root", which is the directory at or
@@ -156,20 +185,24 @@ def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None, work
     tracking this file as your project's build environment). Next, ds runs
     Docker, using that Dockerfile, setting a shell as entrypoint and running
     the supplied command.
-    '''
-    logging_level= logging.WARN - 10*verbose + 10*quiet
+    """
+    logging_level = logging.WARN - 10 * verbose + 10 * quiet
     logging.basicConfig(level=logging_level)
-    log= logging.getLogger('cli')
+    log = logging.getLogger("cli")
 
-    log.info('Starting')
-    command= ' '.join(command)
-    root= getRoot()
-    dockerfile_path= Path(dockerfile).resolve() if dockerfile else root/Path('Dockerfile')
-    dsrc_path= Path(dsrc).resolve() if dsrc else root/Path('ds.rc')
-    uid=os.getuid()
-    user=os.getlogin()
-    work_directory= Path(work_directory).resolve() if work_directory else root
-    log.debug(textwrap.dedent(f'''
+    log.info("Starting")
+    command = " ".join(command)
+    root = getRoot()
+    dockerfile_path = (
+        Path(dockerfile).resolve() if dockerfile else root / Path("Dockerfile")
+    )
+    dsrc_path = Path(dsrc).resolve() if dsrc else root / Path("ds.rc")
+    uid = os.getuid()
+    user = os.getlogin()
+    work_directory = Path(work_directory).resolve() if work_directory else root
+    log.debug(
+        textwrap.dedent(
+            f"""
     Settings:
 
       logging level ..... {logging_level}
@@ -181,25 +214,55 @@ def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None, work
       uid ............... {uid}
       user .............. {user}
       work directory .... {work_directory}
-      '''))
+      """
+        )
+    )
 
     if init:
         if dry_run:
-            log.info('Would have created docker file at: {dockerfile_path}')
+            log.info("Would have created docker file at: {dockerfile_path}")
         else:
             createDockerfile(dockerfile_path)
 
-    if init: 
+    if init:
         if dry_run:
-            log.info('Would have created dsrc file at: {dsrc_path}')
+            log.info("Would have created dsrc file at: {dsrc_path}")
         else:
             createDsrc(dsrc_path)
 
     if dockerfile_path.exists():
         if dry_run:
-            log.info('Would have built dockershell:latest')
-            log.info('Would have run dockershell:latest')
+            log.info("Would have built dockershell:latest")
+            log.info("Would have run dockershell:latest")
         else:
             command = shlex.split(command) if command else command
-            runCommand(['docker', 'buildx', 'build', '.', '-t', 'dockershell:latest', '--build-arg', f'user={user}', '--build-arg', f'uid={uid}'], quiet=logging_level>logging.INFO)
-            os.execlp('docker', 'docker', 'run', '-v', f'.:{work_directory}', '-it', '--rm', '--workdir', work_directory, '-u', user, 'dockershell:latest', *command)
+            runCommand(
+                [
+                    "docker",
+                    "buildx",
+                    "build",
+                    ".",
+                    "-t",
+                    "dockershell:latest",
+                    "--build-arg",
+                    f"user={user}",
+                    "--build-arg",
+                    f"uid={uid}",
+                ],
+                quiet=logging_level > logging.INFO,
+            )
+            os.execlp(
+                "docker",
+                "docker",
+                "run",
+                "-v",
+                f".:{work_directory}",
+                "-it",
+                "--rm",
+                "--workdir",
+                work_directory,
+                "-u",
+                user,
+                "dockershell:latest",
+                *command,
+            )
