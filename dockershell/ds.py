@@ -1,11 +1,13 @@
 import click
 import logging
+import os
 import textwrap
 
 from io import StringIO
 from pathlib import Path
 from rich.traceback import install
-from sh import git
+from sh import git, docker
+from subprocess import Popen, PIPE, CalledProcessError
 
 install()
 
@@ -27,6 +29,80 @@ def getRoot():
         if parent == git_root:
             return git_root
     return git_root
+
+def createDockerfile( dockerfile_path:Path ):
+    '''Create a new Dockerfile at the specified path.'''
+    with dockerfile_path.open('w') as fout:
+        fout.write(textwrap.dedent('''            FROM ubuntu:latest AS base
+
+            ARG user
+            ARG uid
+            
+            # Keep apt tools from prompting
+            ARG DEBIAN_FRONTEND=noninteractive
+            ENV TZ=America/Ny
+            
+            # Inflate the system and set up APT.
+            RUN yes | unminimize
+            RUN apt-get -y install dialog apt-utils tzdata git
+            RUN git clone https://github.com/timothyvanderaerden/add-apt-repository.git /usr/local/share/add-apt-repository
+            RUN chmod ugo+rx /usr/local/share/add-apt-repository/add-apt-repository
+            RUN ln -s /usr/local/share/add-apt-repository/add-apt-repository /usr/local/bin/add-apt-repository
+            
+            # Install needed packages
+            RUN apt-get update
+            RUN apt-get -y install bash
+            RUN apt-get -y install bat
+            RUN apt-get -y install curl
+            RUN apt-get -y install fish
+            RUN apt-get -y install jq
+            RUN apt-get -y install locales
+            RUN apt-get -y install man
+            RUN apt-get -y install ripgrep
+            RUN apt-get -y install sqlite3
+            RUN apt-get -y install sshfs
+            RUN apt-get -y install stow
+            RUN apt-get -y install sudo
+            RUN apt-get -y install tcsh
+            RUN apt-get -y install unzip
+            RUN apt-get -y install zsh
+            RUN apt -y autoremove
+
+            #RUN ln -s /home/${user}/host/home/${user}/.Xauthority /home/${user}/.Xauthority
+            # Set up a user and switch to that user for the remaining commands
+            RUN useradd -u ${uid} -ms /usr/bin/fish ${user}
+            RUN adduser ${user} sudo
+            RUN echo 'ALL            ALL = (ALL) NOPASSWD: ALL' >> /etc/sudoers
+
+            # Set up environment
+            ENV LANGUAGE="en_US.UTF-8"
+            ENV LC_ALL="en_US.UTF-8"
+            ENV LC_CTYPE="en_US.UTF-8"
+            ENV LANG="en_US.UTF-8"
+            RUN locale-gen en_US.UTF-8
+            RUN dpkg-reconfigure locales
+            ENV SSH_AUTH_SOCK=${SSH_AUTH_SOCK}
+
+            WORKDIR /work
+            ENTRYPOINT ["/bin/bash"]
+        '''))
+
+def createDsrc(dsrc_path:Path):
+    with dsrc_path.open('w') as fout:
+        fout.write(textwrap.dedent(f'''bash
+        '''))
+
+
+def runCommand(cmd:str):
+    '''Call cmd in the shell, logging output.'''
+    log= logging.getLogger('cli.runCommand')
+
+    with Popen(cmd, stdout=PIPE, bufsize=1, universal_newlines=True) as p:
+        for line in p.stdout:
+            log.info(line, end='') # process line here
+
+    if p.returncode != 0:
+        raise CalledProcessError(p.returncode, p.args)
 
 @click.command
 @click.option('-n/-N','--dry-run/--no-dry-run',help='If set, do not actually do anything.')
@@ -67,4 +143,22 @@ def cli(dry_run, verbose, quiet, init, command, dockerfile=None, dsrc=None):
       ds.rc path ........ {dsrc_path} {'[EXISTS]' if dsrc_path.exists() else '[ABSENT]'}
       '''))
 
+    if init and not dockerfile_path.exists():
+        if dry_run:
+            log.info('Would have created docker file at: {dockerfile_path}')
+        else:
+            createDockerfile(dockerfile_path)
 
+    if init and not dsrc_path.exists():
+        if dry_run:
+            log.info('Would have created dsrc file at: {dsrc_path}')
+        else:
+            createDsrc(dsrc_path)
+
+    if dockerfile_path.exists():
+        if dry_run:
+            log.info('Would have built dockershell:latest')
+            log.info('Would have run dockershell:latest')
+        else:
+            runCommand(['docker', 'buildx', 'build', '.', '-t', 'dockershell:latest', '--build-arg', 'user=seans', '--build-arg', 'uid=1000'])
+            os.execlp('docker', 'docker', 'run', '-v', '.:/work', '-it', '--rm', '--entrypoint', '/usr/bin/fish', '--workdir', '/work', '-u', 'seans', 'dockershell:latest')
