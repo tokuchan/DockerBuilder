@@ -7,7 +7,7 @@ import textwrap
 from io import StringIO
 from pathlib import Path
 from rich.traceback import install
-from sh import git, docker
+from sh import git, docker, ErrorReturnCode_128
 from subprocess import Popen, PIPE, CalledProcessError, DEVNULL
 
 install()
@@ -15,14 +15,28 @@ install()
 gitRoot = getattr(git, "rev-parse").bake(show_toplevel=True)
 
 
+def getHome():
+    """
+    Return the user's home directory.
+    """
+    log = logging.getLogger("cli.getHome")
+    return Path().home().resolve()
+
+
 def getRoot():
     """
-    Discover the root of the build. Look in each directory between here and
-    project root for a Dockerfile. If one is found, then that is the build
-    root.
+    Discover the root of the build.
+
+    Look in each directory between here and project root for a Dockerfile. If
+    one is found, then that is the build root.
     """
-    log = logging.getLogger("cli.root")
-    git_root = Path(gitRoot().strip()).resolve()
+    log = logging.getLogger("cli.getRoot")
+    git_root = Path().cwd()
+    try:
+        git_root = Path(gitRoot().strip()).resolve()
+    except ErrorReturnCode_128:
+        pass
+
     for parent in (Path().cwd() / Path("foo")).parents:
         log.debug(f"Trying: {parent}")
         if (parent / Path("Dockerfile")).exists():
@@ -31,6 +45,25 @@ def getRoot():
         if parent == git_root:
             return git_root
     return git_root
+
+
+def getDockerfile(root:Path):
+    """
+    Discover the Dockerfile to use.
+
+    Start from the current directory, and search each directory until the root.
+    Return the path to the first Dockerfile found.
+    """
+    log = logging.getLogger("cli.getDockerfile")
+    for parent in (Path().cwd() / Path("foo")).parents:
+        log.debug(f"Trying: {parent}")
+        candidate= parent / Path("Dockerfile")
+        if candidate.exists():
+            log.debug(f"Found Dockerfile: {candidate}")
+            return candidate.resolve()
+        if parent == root:
+            return candidate
+    return root / Path("Dockerfile")
 
 
 def createDockerfile(dockerfile_path: Path):
@@ -196,11 +229,9 @@ def cli(
 
     log.info("Starting")
     command = " ".join(command)
+    home = getHome()
     root = getRoot()
-    dockerfile_path = (
-        Path(dockerfile).resolve() if dockerfile else root / Path("Dockerfile")
-    )
-    dsrc_path = Path(dsrc).resolve() if dsrc else root / Path("ds.rc")
+    dockerfile_path = getDockerfile(root)
     uid = os.getuid()
     user = os.getlogin()
     work_directory = Path(work_directory).resolve() if work_directory else root
@@ -213,8 +244,8 @@ def cli(
       init .............. {'yes' if init else 'no'}
       command ........... {command}
       root .............. {root}
+      home .............. {home}
       Dockerfile path ... {dockerfile_path} {'[EXISTS]' if dockerfile_path.exists() else '[ABSENT]'}
-      ds.rc path ........ {dsrc_path} {'[EXISTS]' if dsrc_path.exists() else '[ABSENT]'}
       uid ............... {uid}
       user .............. {user}
       work directory .... {work_directory}
@@ -227,12 +258,6 @@ def cli(
             log.info("Would have created docker file at: {dockerfile_path}")
         else:
             createDockerfile(dockerfile_path)
-
-    if init:
-        if dry_run:
-            log.info("Would have created dsrc file at: {dsrc_path}")
-        else:
-            createDsrc(dsrc_path)
 
     if dockerfile_path.exists():
         if dry_run:
@@ -261,6 +286,8 @@ def cli(
                 "docker",
                 "docker",
                 "run",
+                "-v",
+                f"{home}:{home}",
                 "-v",
                 f".:{work_directory}",
                 "-it",
