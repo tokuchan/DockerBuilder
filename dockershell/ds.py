@@ -87,11 +87,16 @@ def createDockerfile(dockerfile_path: Path):
             RUN git clone https://github.com/timothyvanderaerden/add-apt-repository.git /usr/local/share/add-apt-repository
             RUN chmod ugo+rx /usr/local/share/add-apt-repository/add-apt-repository
             RUN ln -s /usr/local/share/add-apt-repository/add-apt-repository /usr/local/bin/add-apt-repository
+            RUN apt-get -y update
+            RUN apt-get -y install curl
+            RUN apt-get -y install locales
+            RUN apt-get -y install man
+            RUN apt-get -y install python3
+            RUN apt-get -y install sqlite3
+            RUN apt-get -y install sudo
+            RUN apt -y autoremove
 
             FROM base AS package-install
-            
-            # Install needed packages
-            RUN apt-get update
 
             # Shells
             #RUN apt-get -y install bash
@@ -100,28 +105,24 @@ def createDockerfile(dockerfile_path: Path):
             #RUN apt-get -y install zsh
 
             # System support
-            RUN apt-get -y install locales
-            RUN apt-get -y install man
-            RUN apt-get -y install sshfs
-            RUN apt-get -y install sudo
-            RUN apt-get -y install stow
-            RUN apt-get -y install unzip
-
-            # Programming languages
-            RUN apt-get -y install python3
+            #RUN apt-get -y install sshfs
+            #RUN apt-get -y install stow
+            #RUN apt-get -y install unzip
 
             # Utilties
-            RUN apt-get -y install bat
-            RUN apt-get -y install curl
-            RUN apt-get -y install exa
-            RUN apt-get -y install jq
-            RUN apt-get -y install ripgrep
-            RUN apt-get -y install sqlite3
+            #RUN apt-get -y install bat
+            #RUN apt-get -y install exa
+            #RUN apt-get -y install jq
+            #RUN apt-get -y install ripgrep
+
+            # Clean up
             RUN apt -y autoremove
 
             FROM package-install AS user-setup
 
+            # Handy if you want to support X windows apps within the DS environment
             #RUN ln -s /home/${user}/host/home/${user}/.Xauthority /home/${user}/.Xauthority
+
             # Set up a user and switch to that user for the remaining commands
             RUN useradd -u ${uid} -ms /usr/bin/fish ${user}
             RUN adduser ${user} sudo
@@ -140,7 +141,7 @@ def createDockerfile(dockerfile_path: Path):
 
             RUN mkdir -p /usr/local/share/python-pip
             RUN curl -Lo /usr/local/share/python-pip/get-pip.py https://bootstrap.pypa.io/get-pip.py
-            RUN sudo python3 /usr/local/share/python-pip/get-pip.py
+            RUN python3 /usr/local/share/python-pip/get-pip.py
 
             RUN pip install --upgrade pip rich-cli termsql ipython
 
