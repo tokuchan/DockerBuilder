@@ -74,6 +74,8 @@ def createDockerfile(dockerfile_path: Path):
             ENV uid=${UID}
             ARG ROOTDIR
             ENV rootdir=${ROOTDIR}
+            ARG WORKDIR
+            ENV workdir=${WORKDIR}
             
             # Keep apt tools from prompting
             ARG DEBIAN_FRONTEND=noninteractive
@@ -144,7 +146,7 @@ def createDockerfile(dockerfile_path: Path):
 
             FROM python-setup AS user-shell
 
-            WORKDIR /work
+            WORKDIR ${workdir}
             CMD ["fish"]
         """
             )
@@ -226,7 +228,7 @@ def cli(
     dockerfile_path = getDockerfile(root)
     uid = os.getuid()
     user = os.getlogin()
-    work_directory = Path(work_directory).resolve() if work_directory else root
+    work_directory = Path(work_directory).resolve() if work_directory else Path().cwd().resolve()
     log.debug(
         textwrap.dedent(
             f"""
@@ -257,6 +259,7 @@ def cli(
             log.info("Would have run dockershell:latest")
         else:
             command = shlex.split(command) if command else command
+            os.chdir(dockerfile_path.parent)
             runCommand(
                 [
                     "docker",
@@ -270,10 +273,13 @@ def cli(
                     "--build-arg",
                     f"UID={uid}",
                     "--build-arg",
-                    f"ROOTDIR={root}"
+                    f"ROOTDIR={root}",
+                    "--build-arg",
+                    f"WORKDIR={work_directory}"
                 ],
                 quiet=logging_level > logging.INFO,
             )
+            os.chdir(work_directory)
             os.execlp(
                 "docker",
                 "docker",
