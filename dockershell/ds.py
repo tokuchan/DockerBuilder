@@ -27,8 +27,7 @@ def getRoot():
     """
     Discover the root of the build.
 
-    Look in each directory between here and project root for a Dockerfile. If
-    one is found, then that is the build root.
+    Return either the project (git) root or the cwd.
     """
     log = logging.getLogger("cli.getRoot")
     git_root = Path().cwd()
@@ -37,13 +36,6 @@ def getRoot():
     except ErrorReturnCode_128:
         pass
 
-    for parent in (Path().cwd() / Path("foo")).parents:
-        log.debug(f"Trying: {parent}")
-        if (parent / Path("Dockerfile")).exists():
-            log.debug(f"Found root: {parent}")
-            return parent.resolve()
-        if parent == git_root:
-            return git_root
     return git_root
 
 
